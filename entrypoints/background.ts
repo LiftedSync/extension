@@ -1,14 +1,13 @@
 import {config} from '@/lib/config';
-import type {VideoState, UserInfo} from '@/lib/types';
+import type {Platform, UserInfo, VideoState} from '@/lib/types';
 import {getUrlPatternsForPlatform, isSupportedUrl, isValidUrlForPlatform} from '@/lib/platforms';
-import type { Platform } from '@/lib/types';
 import type {
-    ClientMessage,
-    ServerMessage,
-    PopupToBackgroundMessage,
-    BackgroundToPopupMessage,
     BackgroundToContentMessage,
+    BackgroundToPopupMessage,
+    ClientMessage,
     ContentToBackgroundMessage,
+    PopupToBackgroundMessage,
+    ServerMessage,
 } from '@/lib/messages';
 
 interface RoomState {
@@ -32,29 +31,28 @@ const activeTabs = new Set<number>();
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
 let connectionStatus: ConnectionStatus = 'disconnected';
 
-// Pending operation for reconnection
-let pendingOperation: PopupToBackgroundMessage | null = null;
+// Pending message to send once WebSocket connects
+let pendingMessage: ClientMessage | null = null;
 
 function log(...args: unknown[]) {
     console.log('[LiftedSync Background]', ...args);
 }
 
 async function getOrGenerateUserName(providedName?: string): Promise<string> {
-    // If a name was provided, use it
+    // If a name was provided, save it and use it
     if (providedName && providedName.trim()) {
+        await browser.storage.local.set({userName: providedName.trim()});
         return providedName.trim();
     }
 
-    // Otherwise, check storage for a stored username or generate one
+    // Otherwise, check storage for a stored username
     const result = await browser.storage.local.get('userName');
     if (result.userName && typeof result.userName === 'string') {
         return result.userName;
     }
 
-    // Generate a new username and store it
-    const userName = `User${Math.floor(Math.random() * 10000)}`;
-    await browser.storage.local.set({userName});
-    return userName;
+    // Generate a new username without storing it
+    return `User${Math.floor(Math.random() * 10000)}`;
 }
 
 function sendToPopup(message: BackgroundToPopupMessage) {
@@ -127,7 +125,7 @@ function handleServerMessage(message: ServerMessage) {
             };
             connectionStatus = 'connected';
             reconnectAttempts = 0;
-            pendingOperation = null;
+            pendingMessage = null;
 
             sendToPopup({
                 action: 'statusUpdate',
@@ -226,10 +224,10 @@ function connect() {
         log('WebSocket connected');
         startHeartbeat();
 
-        // If we have a pending operation, execute it now
-        if (pendingOperation) {
-            handlePopupMessage(pendingOperation);
-            pendingOperation = null;
+        // If we have a pending message, send it now
+        if (pendingMessage) {
+            sendMessage(pendingMessage);
+            pendingMessage = null;
         }
     };
 
@@ -277,7 +275,7 @@ function disconnect() {
 
     roomState = null;
     connectionStatus = 'disconnected';
-    pendingOperation = null;
+    pendingMessage = null;
 
     sendToPopup({action: 'statusUpdate', status: 'disconnected'});
     broadcastToContentScripts({action: 'disconnect'});
@@ -289,32 +287,32 @@ function handlePopupMessage(message: PopupToBackgroundMessage) {
     switch (message.action) {
         case 'createRoom':
             getOrGenerateUserName(message.userName).then((userName) => {
-                const createMessage = {...message, userName};
+                const clientMsg: ClientMessage = {
+                    type: 'create_room',
+                    userName,
+                    platform: message.platform,
+                };
                 if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    pendingOperation = createMessage;
+                    pendingMessage = clientMsg;
                     connect();
                 } else {
-                    sendMessage({
-                        type: 'create_room',
-                        userName,
-                        platform: message.platform,
-                    });
+                    sendMessage(clientMsg);
                 }
             });
             break;
 
         case 'joinRoom':
             getOrGenerateUserName(message.userName).then((userName) => {
-                const joinMessage = {...message, userName};
+                const clientMsg: ClientMessage = {
+                    type: 'join_room',
+                    roomId: message.roomId,
+                    userName,
+                };
                 if (!ws || ws.readyState !== WebSocket.OPEN) {
-                    pendingOperation = joinMessage;
+                    pendingMessage = clientMsg;
                     connect();
                 } else {
-                    sendMessage({
-                        type: 'join_room',
-                        roomId: message.roomId,
-                        userName,
-                    });
+                    sendMessage(clientMsg);
                 }
             });
             break;
@@ -403,11 +401,17 @@ function handleContentScriptMessage(
             if (!roomState) {
                 getOrGenerateUserName().then((userName) => {
                     log('Auto-joining room:', message.roomId, 'as', userName);
-                    handlePopupMessage({
-                        action: 'joinRoom',
+                    const clientMsg: ClientMessage = {
+                        type: 'join_room',
                         roomId: message.roomId,
                         userName,
-                    });
+                    };
+                    if (!ws || ws.readyState !== WebSocket.OPEN) {
+                        pendingMessage = clientMsg;
+                        connect();
+                    } else {
+                        sendMessage(clientMsg);
+                    }
                 });
             } else {
                 log('Already in a room, ignoring auto-join');
