@@ -15,14 +15,17 @@ function App() {
   const [roomId, setRoomId] = useState<string>('');
   const [platform, setPlatform] = useState<Platform>('youtube');
   const [detectedPlatform, setDetectedPlatform] = useState<Platform | null>(null);
+  const [activeTabId, setActiveTabId] = useState<number | null>(null);
   const [users, setUsers] = useState<UserInfo[]>([]);
   const [error, setError] = useState<string>('');
   const [isLoading, setIsLoading] = useState(false);
 
-  // Detect platform from current tab URL
+  // Detect platform from current tab URL and capture tab ID
   useEffect(() => {
     browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
-      const url = tabs[0]?.url;
+      const tab = tabs[0];
+      if (tab?.id) setActiveTabId(tab.id);
+      const url = tab?.url;
       if (url) {
         const detected = detectPlatformFromUrl(url);
         if (detected) setDetectedPlatform(detected);
@@ -151,6 +154,7 @@ function App() {
           platform={platform}
           users={users}
           onLeaveRoom={handleLeaveRoom}
+          activeTabId={activeTabId}
         />
       );
 

@@ -1,6 +1,6 @@
 import {config} from '@/lib/config';
 import type {Platform, UserInfo, VideoState} from '@/lib/types';
-import {getUrlPatternsForPlatform, isSupportedUrl, isValidUrlForPlatform} from '@/lib/platforms';
+import {isSupportedUrl, isValidUrlForPlatform} from '@/lib/platforms';
 import type {
     BackgroundToContentMessage,
     BackgroundToPopupMessage,
@@ -26,6 +26,9 @@ const MAX_RECONNECT_ATTEMPTS = 5;
 
 // Track tabs with active content scripts
 const activeTabs = new Set<number>();
+
+// Track tabs that are opted-in to sync
+const syncedTabs = new Set<number>();
 
 // Connection status
 type ConnectionStatus = 'disconnected' | 'connecting' | 'connected' | 'error';
@@ -70,14 +73,8 @@ function sendToContentScript(tabId: number, message: BackgroundToContentMessage)
 async function broadcastToContentScripts(message: BackgroundToContentMessage) {
     if (!roomState) return;
 
-    const tabs = await browser.tabs.query({
-        url: getUrlPatternsForPlatform(roomState.platform),
-    });
-
-    for (const tab of tabs) {
-        if (tab.id) {
-            sendToContentScript(tab.id, message);
-        }
+    for (const tabId of syncedTabs) {
+        sendToContentScript(tabId, message);
     }
 }
 
@@ -253,6 +250,7 @@ function connect() {
         } else {
             connectionStatus = 'disconnected';
             roomState = null;
+            syncedTabs.clear();
             sendToPopup({action: 'statusUpdate', status: 'disconnected'});
             broadcastToContentScripts({action: 'disconnect'});
         }
@@ -276,17 +274,26 @@ function disconnect() {
     roomState = null;
     connectionStatus = 'disconnected';
     pendingMessage = null;
+    syncedTabs.clear();
 
     sendToPopup({action: 'statusUpdate', status: 'disconnected'});
     broadcastToContentScripts({action: 'disconnect'});
 }
 
-function handlePopupMessage(message: PopupToBackgroundMessage) {
+async function handlePopupMessage(message: PopupToBackgroundMessage) {
     log('Popup message:', message);
 
     switch (message.action) {
         case 'createRoom':
-            getOrGenerateUserName(message.userName).then((userName) => {
+            getOrGenerateUserName(message.userName).then(async (userName) => {
+                // Add the active tab to syncedTabs
+                const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+                const activeTabId = tabs[0]?.id;
+                if (activeTabId) {
+                    syncedTabs.add(activeTabId);
+                    log('Added tab to syncedTabs on createRoom:', activeTabId);
+                }
+
                 const clientMsg: ClientMessage = {
                     type: 'create_room',
                     userName,
@@ -302,7 +309,15 @@ function handlePopupMessage(message: PopupToBackgroundMessage) {
             break;
 
         case 'joinRoom':
-            getOrGenerateUserName(message.userName).then((userName) => {
+            getOrGenerateUserName(message.userName).then(async (userName) => {
+                // Add the active tab to syncedTabs
+                const tabs = await browser.tabs.query({ active: true, currentWindow: true });
+                const activeTabId = tabs[0]?.id;
+                if (activeTabId) {
+                    syncedTabs.add(activeTabId);
+                    log('Added tab to syncedTabs on joinRoom:', activeTabId);
+                }
+
                 const clientMsg: ClientMessage = {
                     type: 'join_room',
                     roomId: message.roomId,
@@ -339,6 +354,45 @@ function handlePopupMessage(message: PopupToBackgroundMessage) {
                 });
             }
             break;
+
+        case 'toggleTabSync':
+            if (message.enabled) {
+                syncedTabs.add(message.tabId);
+                log('Tab added to syncedTabs:', message.tabId);
+                // Send connect + sync to the newly synced tab
+                if (roomState) {
+                    sendToContentScript(message.tabId, {
+                        action: 'connect',
+                        roomId: roomState.roomId,
+                        platform: roomState.platform,
+                    });
+                    sendToContentScript(message.tabId, {
+                        action: 'syncUpdate',
+                        state: roomState.state,
+                        currentTime: roomState.currentTime,
+                    });
+                }
+            } else {
+                syncedTabs.delete(message.tabId);
+                log('Tab removed from syncedTabs:', message.tabId);
+                sendToContentScript(message.tabId, { action: 'disconnect' });
+            }
+            break;
+
+        case 'getTabSyncStatus': {
+            const isSynced = syncedTabs.has(message.tabId);
+            let isMatchingPlatform = false;
+            if (roomState) {
+                try {
+                    const tab = await browser.tabs.get(message.tabId);
+                    isMatchingPlatform = tab.url ? isValidUrlForPlatform(tab.url, roomState.platform) : false;
+                } catch {
+                    // Tab might not exist
+                }
+            }
+            sendToPopup({ action: 'tabSyncStatus', isSynced, isMatchingPlatform });
+            break;
+        }
     }
 }
 
@@ -351,14 +405,7 @@ function handleContentScriptMessage(
 
     switch (message.action) {
         case 'videoUpdate':
-            if (roomState) {
-                // Only forward updates from tabs matching the room's platform
-                const senderUrl = sender.tab?.url || sender.url || '';
-                if (!isValidUrlForPlatform(senderUrl, roomState.platform)) {
-                    log('Ignoring videoUpdate from non-matching platform tab:', senderUrl);
-                    break;
-                }
-
+            if (roomState && tabId && syncedTabs.has(tabId)) {
                 roomState.state = message.state;
                 roomState.currentTime = message.currentTime;
 
@@ -377,21 +424,18 @@ function handleContentScriptMessage(
                 browser.action.enable(tabId);
                 log('Enabled extension for tab:', tabId);
 
-                // Send current state if in a room and tab matches the room's platform
-                if (roomState) {
-                    const tabUrl = sender.tab?.url || '';
-                    if (isValidUrlForPlatform(tabUrl, roomState.platform)) {
-                        sendToContentScript(tabId, {
-                            action: 'connect',
-                            roomId: roomState.roomId,
-                            platform: roomState.platform,
-                        });
-                        sendToContentScript(tabId, {
-                            action: 'syncUpdate',
-                            state: roomState.state,
-                            currentTime: roomState.currentTime,
-                        });
-                    }
+                // Only auto-connect if this tab is in syncedTabs
+                if (roomState && syncedTabs.has(tabId)) {
+                    sendToContentScript(tabId, {
+                        action: 'connect',
+                        roomId: roomState.roomId,
+                        platform: roomState.platform,
+                    });
+                    sendToContentScript(tabId, {
+                        action: 'syncUpdate',
+                        state: roomState.state,
+                        currentTime: roomState.currentTime,
+                    });
                 }
             }
             break;
@@ -399,6 +443,12 @@ function handleContentScriptMessage(
         case 'autoJoin':
             // Auto-join a room from URL parameter
             if (!roomState) {
+                // Add the sender tab to syncedTabs
+                if (tabId) {
+                    syncedTabs.add(tabId);
+                    log('Added tab to syncedTabs on autoJoin:', tabId);
+                }
+
                 getOrGenerateUserName().then((userName) => {
                     log('Auto-joining room:', message.roomId, 'as', userName);
                     const clientMsg: ClientMessage = {
@@ -430,11 +480,8 @@ export default defineBackground(() => {
     browser.runtime.onMessage.addListener((message, sender) => {
         // Determine message source and handle accordingly
         if ('action' in message) {
-            if (
-                message.action === 'videoUpdate' ||
-                message.action === 'ready' ||
-                message.action === 'autoJoin'
-            ) {
+            const contentActions = ['videoUpdate', 'ready', 'autoJoin'];
+            if (contentActions.includes(message.action)) {
                 handleContentScriptMessage(message as ContentToBackgroundMessage, sender);
             } else {
                 handlePopupMessage(message as PopupToBackgroundMessage);
@@ -448,6 +495,10 @@ export default defineBackground(() => {
         if (activeTabs.has(tabId)) {
             activeTabs.delete(tabId);
             log('Tab closed, removed from active tabs:', tabId);
+        }
+        if (syncedTabs.has(tabId)) {
+            syncedTabs.delete(tabId);
+            log('Tab closed, removed from synced tabs:', tabId);
         }
     });
 

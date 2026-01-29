@@ -107,12 +107,15 @@ export type PopupToBackgroundMessage =
   | { action: 'joinRoom'; roomId: string; userName: string }
   | { action: 'leaveRoom' }
   | { action: 'getStatus' }
-  | { action: 'navigate'; url: string };
+  | { action: 'navigate'; url: string }
+  | { action: 'toggleTabSync'; tabId: number; enabled: boolean }
+  | { action: 'getTabSyncStatus'; tabId: number };
 
 export type BackgroundToPopupMessage =
   | { action: 'statusUpdate'; status: 'disconnected' | 'connecting' | 'connected' | 'error'; roomId?: string; platform?: Platform; users?: UserInfo[]; error?: string }
   | { action: 'roomCreated'; roomId: string }
-  | { action: 'userUpdate'; users: UserInfo[] };
+  | { action: 'userUpdate'; users: UserInfo[] }
+  | { action: 'tabSyncStatus'; isSynced: boolean; isMatchingPlatform: boolean };
 
 export type BackgroundToContentMessage =
   | { action: 'syncUpdate'; state: VideoState; currentTime: number }

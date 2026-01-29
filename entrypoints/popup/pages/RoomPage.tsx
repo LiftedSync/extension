@@ -4,10 +4,12 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Field, FieldDescription } from '@/components/ui/field';
 import { ButtonGroup } from '@/components/ui/button-group';
-import {Copy, Check, LogOut, Users, ExternalLink, LayoutDashboard} from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
+import {Copy, Check, LogOut, Users, ExternalLink, LayoutDashboard, MonitorPlay} from 'lucide-react';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import type { Platform, UserInfo } from '@/lib/types';
-import type { PopupToBackgroundMessage } from '@/lib/messages';
+import type { PopupToBackgroundMessage, BackgroundToPopupMessage } from '@/lib/messages';
 import { isValidUrlForPlatform, getPlatformLabel } from '@/lib/platforms';
 
 interface RoomPageProps {
@@ -15,14 +17,17 @@ interface RoomPageProps {
   platform: Platform;
   users: UserInfo[];
   onLeaveRoom: () => void;
+  activeTabId: number | null;
 }
 
-export function RoomPage({ roomId, platform, users, onLeaveRoom }: RoomPageProps) {
+export function RoomPage({ roomId, platform, users, onLeaveRoom, activeTabId }: RoomPageProps) {
   const [copiedCode, setCopiedCode] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
   const [navigateUrl, setNavigateUrl] = useState('');
   const [urlError, setUrlError] = useState<string | null>(null);
+  const [isSynced, setIsSynced] = useState(false);
+  const [isMatchingPlatform, setIsMatchingPlatform] = useState(false);
 
   useEffect(() => {
     browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
@@ -39,6 +44,34 @@ export function RoomPage({ roomId, platform, users, onLeaveRoom }: RoomPageProps
       }
     });
   }, [roomId]);
+
+  // Query tab sync status on mount
+  useEffect(() => {
+    if (activeTabId === null) return;
+
+    const handleMessage = (message: BackgroundToPopupMessage) => {
+      if (message.action === 'tabSyncStatus') {
+        setIsSynced(message.isSynced);
+        setIsMatchingPlatform(message.isMatchingPlatform);
+      }
+    };
+
+    browser.runtime.onMessage.addListener(handleMessage);
+
+    const msg: PopupToBackgroundMessage = { action: 'getTabSyncStatus', tabId: activeTabId };
+    browser.runtime.sendMessage(msg).catch(console.error);
+
+    return () => {
+      browser.runtime.onMessage.removeListener(handleMessage);
+    };
+  }, [activeTabId]);
+
+  const handleToggleSync = (checked: boolean) => {
+    if (activeTabId === null) return;
+    setIsSynced(checked);
+    const msg: PopupToBackgroundMessage = { action: 'toggleTabSync', tabId: activeTabId, enabled: checked };
+    browser.runtime.sendMessage(msg).catch(console.error);
+  };
 
   const handleCopyCode = async () => {
     try {
@@ -104,58 +137,84 @@ export function RoomPage({ roomId, platform, users, onLeaveRoom }: RoomPageProps
         </Button>
       </div>
 
-      {/* Room Details Section */}
-      <Card className="mb-4">
-        <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-medium flex items-center">
-            <LayoutDashboard className="h-4 w-4 mr-2" />
-            Room Code
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          {/* Room Code with copy button */}
-          <div className="flex items-center justify-between">
-            <div className="space-y-1">
-              <div className="text-xl font-mono font-bold tracking-widest">
+      {/* Room Code & Tab Sync */}
+      <div className="grid grid-cols-2 gap-3 mb-4">
+        <Card>
+          <CardHeader className="p-3 pb-1">
+            <CardTitle className="text-sm font-medium flex items-center">
+              <LayoutDashboard className="h-4 w-4 mr-2" />
+              Room Code
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-3 pt-0">
+            <div className="flex items-center justify-between">
+              <div className="text-lg font-mono font-bold tracking-widest">
                 {roomId}
               </div>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleCopyCode}
+                className="h-7 w-7"
+              >
+                {copiedCode ? (
+                  <Check className="h-3.5 w-3.5 text-green-500" />
+                ) : (
+                  <Copy className="h-3.5 w-3.5" />
+                )}
+              </Button>
             </div>
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleCopyCode}
-              className="h-8 w-8"
-            >
-              {copiedCode ? (
-                <Check className="h-4 w-4 text-green-500" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
+          </CardContent>
+        </Card>
 
-          {/* Copy URL Button */}
-          {shareUrl && (
-            <Button
-              variant="outline"
-              onClick={handleCopyUrl}
-              className="w-full"
-            >
-              {copiedUrl ? (
-                <>
-                  <Check className="mr-2 h-4 w-4 text-green-500" />
-                  URL Copied!
-                </>
-              ) : (
-                <>
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy Share URL
-                </>
-              )}
-            </Button>
+        <Card className="flex flex-col items-center justify-center p-3">
+          <CardTitle className="text-sm font-medium flex items-center mb-2">
+            <MonitorPlay className="h-4 w-4 mr-2" />
+            Tab Synced
+          </CardTitle>
+          <TooltipProvider>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span>
+                  <Switch
+                    id="tab-sync"
+                    checked={isSynced}
+                    disabled={!isMatchingPlatform}
+                    onCheckedChange={handleToggleSync}
+                  />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {!isMatchingPlatform
+                  ? `Tab doesn't match ${getPlatformLabel(platform)}`
+                  : isSynced
+                    ? 'This tab is synced'
+                    : 'This tab is not synced'}
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
+        </Card>
+      </div>
+
+      {/* Copy URL Button */}
+      {shareUrl && (
+        <Button
+          onClick={handleCopyUrl}
+          className="w-full mb-4"
+        >
+          {copiedUrl ? (
+            <>
+              <Check className="mr-2 h-4 w-4 text-green-500" />
+              URL Copied!
+            </>
+          ) : (
+            <>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy URL
+            </>
           )}
-        </CardContent>
-      </Card>
+        </Button>
+      )}
 
       {/* Users List */}
       <Card className="mb-4">
@@ -166,19 +225,21 @@ export function RoomPage({ roomId, platform, users, onLeaveRoom }: RoomPageProps
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <ul className="space-y-2">
+          <div className="flex gap-3 flex-wrap">
             {users.map((user) => (
-              <li
+              <div
                 key={user.id}
-                className="flex items-center gap-2 text-sm text-foreground"
+                className="flex flex-col items-center gap-1 min-w-0"
               >
-                <Avatar className="h-5 w-5 text-xs">
+                <Avatar className="h-7 w-7 text-xs">
                   <AvatarFallback>{user.name.charAt(0).toUpperCase()}</AvatarFallback>
                 </Avatar>
-                {user.name}
-              </li>
+                <span className="text-xs text-muted-foreground truncate max-w-[60px]">
+                  {user.name}
+                </span>
+              </div>
             ))}
-          </ul>
+          </div>
         </CardContent>
       </Card>
 
