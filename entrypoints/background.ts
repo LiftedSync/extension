@@ -1,6 +1,7 @@
 import {config} from '@/lib/config';
 import type {VideoState, UserInfo} from '@/lib/types';
-import {getUrlPatternsForPlatform, isSupportedUrl} from '@/lib/platforms';
+import {getUrlPatternsForPlatform, isSupportedUrl, isValidUrlForPlatform} from '@/lib/platforms';
+import type { Platform } from '@/lib/types';
 import type {
     ClientMessage,
     ServerMessage,
@@ -353,6 +354,13 @@ function handleContentScriptMessage(
     switch (message.action) {
         case 'videoUpdate':
             if (roomState) {
+                // Only forward updates from tabs matching the room's platform
+                const senderUrl = sender.tab?.url || sender.url || '';
+                if (!isValidUrlForPlatform(senderUrl, roomState.platform)) {
+                    log('Ignoring videoUpdate from non-matching platform tab:', senderUrl);
+                    break;
+                }
+
                 roomState.state = message.state;
                 roomState.currentTime = message.currentTime;
 
@@ -371,18 +379,21 @@ function handleContentScriptMessage(
                 browser.action.enable(tabId);
                 log('Enabled extension for tab:', tabId);
 
-                // Send current state if in a room
+                // Send current state if in a room and tab matches the room's platform
                 if (roomState) {
-                    sendToContentScript(tabId, {
-                        action: 'connect',
-                        roomId: roomState.roomId,
-                        platform: roomState.platform,
-                    });
-                    sendToContentScript(tabId, {
-                        action: 'syncUpdate',
-                        state: roomState.state,
-                        currentTime: roomState.currentTime,
-                    });
+                    const tabUrl = sender.tab?.url || '';
+                    if (isValidUrlForPlatform(tabUrl, roomState.platform)) {
+                        sendToContentScript(tabId, {
+                            action: 'connect',
+                            roomId: roomState.roomId,
+                            platform: roomState.platform,
+                        });
+                        sendToContentScript(tabId, {
+                            action: 'syncUpdate',
+                            state: roomState.state,
+                            currentTime: roomState.currentTime,
+                        });
+                    }
                 }
             }
             break;
