@@ -1,111 +1,11 @@
-import {config} from '@/lib/config';
-import type {VideoState} from '@/lib/types';
-import type {BackgroundToContentMessage} from '@/lib/messages';
 import {
     log,
     createContentScriptState,
     setupVideoListeners,
+    setupMessageListener,
     sendReady,
-    type ContentScriptState,
+    type SeekFn,
 } from '@/lib/content-shared';
-
-// Inject the script into the page's main world (to access React internals)
-function injectPrimeVideoControls() {
-    const script = document.createElement('script');
-    script.src = (browser.runtime.getURL as (path: string) => string)('primevideo-inject.js');
-    script.onload = () => script.remove();
-    script.onerror = (e) => log('Failed to load Prime Video inject script:', e);
-    (document.head || document.documentElement).appendChild(script);
-}
-
-// Prime Video-specific control functions using injected elements
-function primeVideoPlay() {
-    const elem = document.getElementById('liftedSync-pv-play');
-    if (elem) {
-        elem.click();
-    }
-}
-
-function primeVideoPause() {
-    const elem = document.getElementById('liftedSync-pv-pause');
-    if (elem) {
-        elem.click();
-    }
-}
-
-function primeVideoSeek(timeSeconds: number) {
-    const elem = document.getElementById('liftedSync-pv-seek');
-    if (elem) {
-        // Prime Video API uses milliseconds
-        elem.setAttribute('data-time', String(timeSeconds * 1000));
-        elem.click();
-    }
-}
-
-function handlePrimeVideoRemoteUpdate(
-    video: HTMLVideoElement,
-    state: ContentScriptState,
-    remoteState: VideoState,
-    remoteTime: number
-) {
-    if (!video) return;
-
-    const currentState: VideoState = video.paused ? 'paused' : 'playing';
-    const currentTime = video.currentTime;
-
-    if (currentState !== remoteState) {
-        if (remoteState === 'paused') {
-            state.ignoreNext.pause = true;
-            primeVideoPause();
-        } else {
-            state.ignoreNext.play = true;
-            primeVideoPlay();
-        }
-    }
-
-    if (Math.abs(remoteTime - currentTime) > config.DRIFT_TOLERANCE) {
-        state.ignoreNext.timeupdate = true;
-        primeVideoSeek(remoteTime);
-    }
-}
-
-function setupPrimeVideoMessageListener(
-    state: ContentScriptState,
-    getPlayer: () => HTMLVideoElement | null
-) {
-    const handleMessage = (message: BackgroundToContentMessage) => {
-        switch (message.action) {
-            case 'connect':
-                state.isConnected = true;
-                state.roomId = message.roomId;
-                log('Connected to room:', message.roomId);
-                break;
-
-            case 'disconnect':
-                state.isConnected = false;
-                state.roomId = null;
-                log('Disconnected from room');
-                break;
-
-            case 'syncUpdate':
-                const currentPlayer = getPlayer();
-                if (currentPlayer && state.isConnected) {
-                    handlePrimeVideoRemoteUpdate(currentPlayer, state, message.state, message.currentTime);
-                }
-                break;
-
-            case 'navigate':
-                window.location.href = message.url;
-                break;
-        }
-    };
-
-    browser.runtime.onMessage.addListener(handleMessage);
-
-    return () => {
-        browser.runtime.onMessage.removeListener(handleMessage);
-    };
-}
 
 export default defineContentScript({
     matches: [
@@ -122,12 +22,11 @@ export default defineContentScript({
         let player: HTMLVideoElement | null = null;
         let cleanupListeners: (() => void) | null = null;
         let cleanupMessage: (() => void) | null = null;
-        let controlsInjected = false;
 
         function findActiveVideo(): HTMLVideoElement | null {
             const allVideos = Array.from(document.querySelectorAll('video'));
 
-            const candidates = allVideos.filter(v => {
+            const candidates = allVideos.filter((v) => {
                 if (!v.src) return false;
                 const rect = v.getBoundingClientRect();
                 return rect.width > 0 && rect.height > 0;
@@ -150,16 +49,7 @@ export default defineContentScript({
             return candidates[0] as HTMLVideoElement;
         }
 
-        function ensureControlsInjected() {
-            if (!controlsInjected && document.body) {
-                injectPrimeVideoControls();
-                controlsInjected = true;
-            }
-        }
-
         function initPlayer() {
-            ensureControlsInjected();
-
             const newPlayer = findActiveVideo();
 
             if (!newPlayer || !newPlayer.src) {
@@ -182,16 +72,32 @@ export default defineContentScript({
             sendReady();
         }
 
+        const primeVideoSeek: SeekFn = (video, time) => {
+            if (video.paused) {
+                state.ignoreNext.play = true;
+                state.ignoreNext.pause = true;
+                video.play()
+                    .then(() => {
+                        video.currentTime = time;
+                        video.pause();
+                    })
+                    .catch(() => {
+                        video.currentTime = time;
+                    });
+            } else {
+                video.currentTime = time;
+            }
+        };
+
         // Initial setup
         initPlayer();
 
-        // Set up message listener with Prime Video-specific handler
-        cleanupMessage = setupPrimeVideoMessageListener(state, () => player);
+        // Set up message listener with Prime Video-specific seek
+        cleanupMessage = setupMessageListener(player, state, () => player, primeVideoSeek);
         sendReady();
 
         // Prime Video is a SPA, watch for navigation changes
         const observer = new MutationObserver(() => {
-            ensureControlsInjected();
             initPlayer();
         });
 
@@ -201,11 +107,12 @@ export default defineContentScript({
         });
 
         const checkInterval = setInterval(() => {
-            if (!controlsInjected) {
-                ensureControlsInjected();
-            }
-
-            if (!player || !document.contains(player) || !player.src || player.getBoundingClientRect().width === 0) {
+            if (
+                !player ||
+                !document.contains(player) ||
+                !player.src ||
+                player.getBoundingClientRect().width === 0
+            ) {
                 player = null;
                 cleanupListeners?.();
                 cleanupListeners = null;

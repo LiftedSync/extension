@@ -21,14 +21,6 @@ export default defineConfig({
         resources: ['netflix-inject.js'],
         matches: ['*://www.netflix.com/*'],
       },
-      {
-        resources: ['primevideo-inject.js'],
-        matches: [
-          '*://www.primevideo.com/*',
-          '*://www.amazon.com/*',
-          '*://www.amazon.de/*',
-        ],
-      },
     ],
   },
 });
