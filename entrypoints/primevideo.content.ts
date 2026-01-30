@@ -94,7 +94,6 @@ export default defineContentScript({
 
         // Set up message listener with Prime Video-specific seek
         cleanupMessage = setupMessageListener(player, state, () => player, primeVideoSeek);
-        sendReady();
 
         // Prime Video is a SPA, watch for navigation changes
         const observer = new MutationObserver(() => {

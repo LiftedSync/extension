@@ -1,6 +1,6 @@
 # LiftedSync Chrome Extension
 
-Chrome extension for synchronized YouTube and Crunchyroll video watching with friends.
+Chrome extension for synchronized video watching with friends across YouTube, Crunchyroll, Netflix, and Prime Video.
 
 ## Overview
 
@@ -8,9 +8,12 @@ LiftedSync allows multiple users to watch videos together in perfect sync. Creat
 
 ### Features
 
-- Create and join watch rooms with simple 6-character codes
+- Create and join watch rooms with simple 4-character codes
 - Automatic video synchronization (play, pause, seek)
-- Support for YouTube and Crunchyroll
+- Support for YouTube, Crunchyroll, Netflix, and Prime Video
+- Per-tab sync control (toggle individual tabs in/out of sync)
+- Navigate together (send all room members to the same URL)
+- Auto-join rooms via URL parameter (`?liftedSyncRoom=CODE`)
 - Dark themed UI with modern design
 - Real-time user presence
 
@@ -27,11 +30,13 @@ LiftedSync allows multiple users to watch videos together in perfect sync. Creat
 ## Project Structure
 
 ```
-sync-frontend/
+extension/
 ├── entrypoints/
 │   ├── background.ts              # WebSocket & state management
 │   ├── youtube.content.ts         # YouTube video controller
 │   ├── crunchyroll.content.ts     # Crunchyroll video controller
+│   ├── netflix.content.ts         # Netflix video controller
+│   ├── primevideo.content.ts      # Prime Video video controller
 │   └── popup/
 │       ├── App.tsx                # Main popup application
 │       ├── main.tsx               # React entry point
@@ -46,8 +51,12 @@ sync-frontend/
 │   ├── config.ts                  # Backend URLs & constants
 │   ├── types.ts                   # TypeScript interfaces
 │   ├── messages.ts                # Message type definitions
+│   ├── platforms.ts               # Platform URL detection & validation
 │   ├── content-shared.ts          # Shared content script utilities
 │   └── utils.ts                   # Tailwind class utilities
+├── public/
+│   ├── icon/                      # Extension icons (16, 32, 48, 128)
+│   └── netflix-inject.js          # Netflix main-world inject script
 ├── styles/
 │   └── globals.css                # Tailwind directives & theme
 ├── tailwind.config.cjs
@@ -126,6 +135,10 @@ manifest: {
     '*://www.youtube.com/*',
     '*://www.crunchyroll.com/*',
     '*://static.crunchyroll.com/*',
+    '*://www.netflix.com/*',
+    '*://www.primevideo.com/*',
+    '*://www.amazon.com/gp/video/*',
+    '*://www.amazon.de/gp/video/*',
   ],
 }
 ```
@@ -135,10 +148,11 @@ manifest: {
 1. **Start the backend server** (see sync-backend README)
 
 2. **Create a Room**
+   - Navigate to a supported video platform
    - Click the extension icon
    - Click "Create Room"
-   - Enter your name and select platform (YouTube/Crunchyroll)
-   - Share the 6-character room code with friends
+   - Enter your name and select platform
+   - Share the 4-character room code with friends
 
 3. **Join a Room**
    - Click the extension icon
@@ -149,6 +163,14 @@ manifest: {
 4. **Watch Together**
    - Play, pause, or seek - everyone stays in sync
    - Drift tolerance of 3 seconds prevents minor sync issues
+   - Use "Navigate Together" to send all members to the same URL
+
+## Platform Notes
+
+- **YouTube** — Uses the standard HTML5 video element (`video.html5-main-video`).
+- **Crunchyroll** — Runs in iframes (`allFrames: true`) to reach the embedded player.
+- **Netflix** — Injects a script into the page's main world to access Netflix's internal player API for play/pause/seek control.
+- **Prime Video** — Uses a smart video selector (largest visible `<video>` element) to distinguish the main player from background preview videos. Seeking while paused uses a play-seek-pause workaround since Prime Video's player ignores direct `currentTime` changes when paused.
 
 ## Development Scripts
 
@@ -173,13 +195,13 @@ The content scripts implement an "ignoreNext" pattern to prevent echo loops:
 ## Troubleshooting
 
 **Extension not detecting video:**
-- Ensure you're on a YouTube watch page (`/watch`) or Crunchyroll video page
+- Ensure you're on a supported video page (YouTube `/watch`, Netflix `/watch`, etc.)
 - Refresh the page after installing the extension
 
 **Sync not working:**
 - Check that both users are in the same room (same room code)
-- Verify the backend server is running (`ws://localhost:8080/ws`)
-- Check the browser console (F12) for error messages
+- Verify the backend server is running
+- Check the browser console (F12) for `[LiftedSync]` log messages
 
 **Content script not loading:**
 - Verify host permissions in manifest

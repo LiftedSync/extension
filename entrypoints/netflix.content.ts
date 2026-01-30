@@ -172,7 +172,6 @@ export default defineContentScript({
     initPlayer();
 
     cleanupMessage = setupNetflixMessageListener(state, () => player);
-    sendReady();
 
     // Netflix is an SPA, watch for navigation changes
     const observer = new MutationObserver(() => {

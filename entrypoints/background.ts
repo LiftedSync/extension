@@ -186,11 +186,15 @@ function handleServerMessage(message: ServerMessage) {
         case 'navigate_update':
             if (roomState) {
                 log('Navigate update:', message.url);
-                // Forward to content scripts to navigate the tab
-                broadcastToContentScripts({
-                    action: 'navigate',
-                    url: message.url,
-                });
+                // Validate URL before forwarding to prevent open redirect
+                if (isValidUrlForPlatform(message.url, roomState.platform)) {
+                    broadcastToContentScripts({
+                        action: 'navigate',
+                        url: message.url,
+                    });
+                } else {
+                    log('Rejected navigate URL - not valid for platform:', message.url);
+                }
             }
             break;
 
@@ -249,10 +253,10 @@ function connect() {
             setTimeout(connect, 1000 * reconnectAttempts);
         } else {
             connectionStatus = 'disconnected';
+            broadcastToContentScripts({action: 'disconnect'});
             roomState = null;
             syncedTabs.clear();
             sendToPopup({action: 'statusUpdate', status: 'disconnected'});
-            broadcastToContentScripts({action: 'disconnect'});
         }
     };
 
@@ -305,7 +309,7 @@ async function handlePopupMessage(message: PopupToBackgroundMessage) {
                 } else {
                     sendMessage(clientMsg);
                 }
-            });
+            }).catch((err) => log('Failed to create room:', err));
             break;
 
         case 'joinRoom':
@@ -329,7 +333,7 @@ async function handlePopupMessage(message: PopupToBackgroundMessage) {
                 } else {
                     sendMessage(clientMsg);
                 }
-            });
+            }).catch((err) => log('Failed to join room:', err));
             break;
 
         case 'leaveRoom':
@@ -462,7 +466,7 @@ function handleContentScriptMessage(
                     } else {
                         sendMessage(clientMsg);
                     }
-                });
+                }).catch((err) => log('Failed to auto-join room:', err));
             } else {
                 log('Already in a room, ignoring auto-join');
             }

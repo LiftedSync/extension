@@ -82,6 +82,16 @@ export default defineContentScript({
       subtree: true,
     });
 
+    // Periodic check for stale player
+    const checkInterval = setInterval(() => {
+      if (!player || !document.contains(player)) {
+        player = null;
+        cleanupListeners?.();
+        cleanupListeners = null;
+        initPlayer();
+      }
+    }, 2000);
+
     // Check URL parameter for auto-join
     const urlParams = new URLSearchParams(window.location.search);
     const roomCode = urlParams.get('liftedSyncRoom');
@@ -95,6 +105,7 @@ export default defineContentScript({
 
     // Cleanup on unload
     window.addEventListener('beforeunload', () => {
+      clearInterval(checkInterval);
       observer.disconnect();
       if (cleanupListeners) cleanupListeners();
       if (cleanupMessage) cleanupMessage();

@@ -1,6 +1,6 @@
 {
   "name": "lifted-sync",
-  "description": "Synchronized YouTube & Crunchyroll video watching",
+  "description": "Synchronized YouTube, Crunchyroll, Netflix & Prime Video watching",
   "private": true,
   "version": "0.8.0",
   "type": "module",
