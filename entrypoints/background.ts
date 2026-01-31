@@ -298,10 +298,24 @@ async function handlePopupMessage(message: PopupToBackgroundMessage) {
                     log('Added tab to syncedTabs on createRoom:', activeTabId);
                 }
 
+                // Query the content script for the current video time
+                let currentTime = 0;
+                if (activeTabId) {
+                    try {
+                        const response = await browser.tabs.sendMessage(activeTabId, {action: 'getCurrentTime'});
+                        if (typeof response?.currentTime === 'number') {
+                            currentTime = response.currentTime;
+                        }
+                    } catch {
+                        // Content script may not be available, default to 0
+                    }
+                }
+
                 const clientMsg: ClientMessage = {
                     type: 'create_room',
                     userName,
                     platform: message.platform,
+                    currentTime,
                 };
                 if (!ws || ws.readyState !== WebSocket.OPEN) {
                     pendingMessage = clientMsg;

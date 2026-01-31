@@ -165,7 +165,19 @@ export function setupMessageListener(
     getPlayer: () => HTMLVideoElement | null,
     onSeek?: SeekFn,
 ) {
-    const handleMessage = (message: BackgroundToContentMessage) => {
+    const handleMessage = (
+        message: BackgroundToContentMessage | { action: 'getCurrentTime' },
+        _sender: unknown,
+        sendResponse: (response: unknown) => void,
+    ): boolean | void => {
+        if (message.action === 'getCurrentTime') {
+            const currentPlayer = getPlayer();
+            if (currentPlayer) {
+                sendResponse({currentTime: currentPlayer.currentTime});
+            }
+            return;
+        }
+
         log('Received message:', message);
 
         switch (message.action) {

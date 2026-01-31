@@ -12,6 +12,7 @@ export interface CreateRoomMessage {
   type: 'create_room';
   userName: string;
   platform: Platform;
+  currentTime: number;
 }
 
 export interface VideoUpdateMessage {
