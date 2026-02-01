@@ -18,6 +18,9 @@ interface RoomState {
     users: UserInfo[];
 }
 
+// Use browserAction for MV2 (Firefox) or action for MV3 (Chrome)
+const actionApi = browser.action ?? (browser as any).browserAction;
+
 let ws: WebSocket | null = null;
 let roomState: RoomState | null = null;
 let heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -439,7 +442,7 @@ function handleContentScriptMessage(
             // Content script is ready - enable the extension icon for this tab
             if (tabId) {
                 activeTabs.add(tabId);
-                browser.action.enable(tabId);
+                actionApi.enable(tabId);
                 log('Enabled extension for tab:', tabId);
 
                 // Only auto-connect if this tab is in syncedTabs
@@ -492,7 +495,7 @@ export default defineBackground(() => {
     log('Background script loaded');
 
     // Disable the extension action by default
-    browser.action.disable();
+    actionApi.disable();
 
     // Listen for messages from popup and content scripts
     browser.runtime.onMessage.addListener((message, sender) => {
@@ -505,7 +508,6 @@ export default defineBackground(() => {
                 handlePopupMessage(message as PopupToBackgroundMessage);
             }
         }
-        return true; // Keep message channel open for async response
     });
 
     // Listen for tab removal to clean up
@@ -526,7 +528,7 @@ export default defineBackground(() => {
             // Check if the new URL is still a supported site
             if (!isSupportedUrl(changeInfo.url)) {
                 activeTabs.delete(tabId);
-                browser.action.disable(tabId);
+                actionApi.disable(tabId);
                 log('Tab navigated away, disabled extension for tab:', tabId);
             }
         }
