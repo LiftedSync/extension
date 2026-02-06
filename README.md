@@ -39,6 +39,7 @@ extension/
 │   ├── primevideo.content.ts      # Prime Video video controller
 │   └── popup/
 │       ├── App.tsx                # Main popup application
+│       ├── index.html             # Popup HTML entry
 │       ├── main.tsx               # React entry point
 │       └── pages/
 │           ├── HomePage.tsx       # Create/Join options
@@ -140,6 +141,12 @@ manifest: {
     '*://www.amazon.com/gp/video/*',
     '*://www.amazon.de/gp/video/*',
   ],
+  web_accessible_resources: [
+    {
+      resources: ['netflix-inject.js'],
+      matches: ['*://www.netflix.com/*'],
+    },
+  ],
 }
 ```
 
@@ -180,16 +187,17 @@ manifest: {
 | `npm run dev:firefox` | Start dev server for Firefox |
 | `npm run build` | Production build for Chrome |
 | `npm run build:firefox` | Production build for Firefox |
-| `npm run zip` | Create distributable zip |
+| `npm run zip` | Create distributable zip for Chrome |
+| `npm run zip:firefox` | Create distributable zip for Firefox |
 | `npm run compile` | Type check without emitting |
 
 ## Sync Algorithm
 
 The content scripts implement an "ignoreNext" pattern to prevent echo loops:
 
-1. When receiving a remote update, set `ignoreNext[action] = true`
+1. When receiving a remote update, set `ignoreNext[action] = true` (separate flags for `play`, `pause`, `timeupdate`, and `seeked`)
 2. Apply the change to the video element
-3. When the local event fires, check `ignoreNext` and skip broadcasting
+3. When the local event fires, check the corresponding `ignoreNext` flag and skip broadcasting
 4. Only sync if time drift exceeds `DRIFT_TOLERANCE` (3 seconds)
 
 ## Troubleshooting
