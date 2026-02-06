@@ -74,6 +74,8 @@ function handleNetflixRemoteUpdate(
   // Handle time sync if drift is too large
   if (Math.abs(remoteTime - currentTime) > config.DRIFT_TOLERANCE) {
     state.ignoreNext.timeupdate = true;
+    state.ignoreNext.seeked = true;
+    state.lastProgress = remoteTime;
     netflixSeek(remoteTime);
   }
 }

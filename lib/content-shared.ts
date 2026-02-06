@@ -13,6 +13,7 @@ export interface ContentScriptState {
         play: boolean;
         pause: boolean;
         timeupdate: boolean;
+        seeked: boolean;
     };
     lastProgress: number;
 }
@@ -25,6 +26,7 @@ export function createContentScriptState(): ContentScriptState {
             play: false,
             pause: false,
             timeupdate: false,
+            seeked: false,
         },
         lastProgress: 0,
     };
@@ -81,6 +83,8 @@ export function handleRemoteUpdate(
     // Handle time sync if drift is too large
     if (Math.abs(remoteTime - currentTime) > config.DRIFT_TOLERANCE) {
         state.ignoreNext.timeupdate = true;
+        state.ignoreNext.seeked = true;
+        state.lastProgress = remoteTime;
         if (onSeek) {
             onSeek(player, remoteTime);
         } else {
@@ -136,7 +140,8 @@ export function setupVideoListeners(
     };
 
     const handleSeeked = () => {
-        if (state.ignoreNext.timeupdate) {
+        if (state.ignoreNext.seeked) {
+            state.ignoreNext.seeked = false;
             return;
         }
         if (!state.isConnected) return;
