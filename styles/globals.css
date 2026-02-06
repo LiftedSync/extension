@@ -33,6 +33,7 @@
   }
   body {
     @apply bg-background text-foreground;
+    background: radial-gradient(circle at 50% 0%, #333333 0%, #1c1c1c 35%, #171717 80%);
     width: 320px;
     min-height: 400px;
   }
