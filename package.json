@@ -2,7 +2,7 @@
   "name": "lifted-sync",
   "description": "Synchronized YouTube, Crunchyroll, Netflix & Prime Video watching",
   "private": true,
-  "version": "0.9.0",
+  "version": "0.9.1",
   "type": "module",
   "scripts": {
     "dev": "wxt",
