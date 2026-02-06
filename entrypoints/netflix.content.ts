@@ -85,7 +85,19 @@ function setupNetflixMessageListener(
   state: ContentScriptState,
   getPlayer: () => HTMLVideoElement | null
 ) {
-  const handleMessage = (message: BackgroundToContentMessage) => {
+  const handleMessage = (
+    message: BackgroundToContentMessage | { action: 'getCurrentTime' },
+    _sender: unknown,
+    sendResponse: (response: unknown) => void,
+  ): boolean | void => {
+    if (message.action === 'getCurrentTime') {
+      const player = getPlayer();
+      if (player) {
+        sendResponse({currentTime: player.currentTime});
+      }
+      return;
+    }
+
     switch (message.action) {
       case 'connect':
         state.isConnected = true;
