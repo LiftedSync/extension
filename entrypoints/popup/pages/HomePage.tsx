@@ -1,15 +1,24 @@
 import {Button} from '@/components/ui/button';
 import {Avatar, AvatarImage, AvatarFallback} from '@/components/ui/avatar';
+import {Settings} from 'lucide-react';
 import liftedLogo from '@/assets/lifted.png';
 
 interface HomePageProps {
     onCreateRoom: () => void;
     onJoinRoom: () => void;
+    onSettings: () => void;
 }
 
-export function HomePage({onCreateRoom, onJoinRoom}: HomePageProps) {
+export function HomePage({onCreateRoom, onJoinRoom, onSettings}: HomePageProps) {
     return (
         <div className="relative flex flex-col min-h-[400px] p-6">
+            <button
+                onClick={onSettings}
+                className="absolute top-4 right-4 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Settings"
+            >
+                <Settings className="h-5 w-5" />
+            </button>
             <div className="flex-1 flex flex-col items-center justify-center -mt-[50px] space-y-6">
                 <div className="text-center space-y-2">
                     <Avatar className="h-16 w-16 mx-auto mb-2 rounded-none">

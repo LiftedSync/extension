@@ -3,11 +3,13 @@ import { HomePage } from './pages/HomePage';
 import { CreateRoomPage } from './pages/CreateRoomPage';
 import { JoinRoomPage } from './pages/JoinRoomPage';
 import { RoomPage } from './pages/RoomPage';
+import { SettingsPage } from './pages/SettingsPage';
 import type { Platform, UserInfo, ConnectionStatus } from '@/lib/types';
 import type { PopupToBackgroundMessage, BackgroundToPopupMessage } from '@/lib/messages';
 import { detectPlatformFromUrl } from '@/lib/platforms';
+import { applyPrimaryColor } from '@/lib/color-utils';
 
-type Page = 'home' | 'create' | 'join' | 'room';
+type Page = 'home' | 'create' | 'join' | 'room' | 'settings';
 
 function App() {
   const [page, setPage] = useState<Page>('home');
@@ -29,6 +31,15 @@ function App() {
       if (url) {
         const detected = detectPlatformFromUrl(url);
         if (detected) setDetectedPlatform(detected);
+      }
+    });
+  }, []);
+
+  // Load persisted primary color on mount
+  useEffect(() => {
+    browser.storage.local.get('primaryColor').then((result: Record<string, unknown>) => {
+      if (typeof result.primaryColor === 'string') {
+        applyPrimaryColor(result.primaryColor);
       }
     });
   }, []);
@@ -158,11 +169,19 @@ function App() {
         />
       );
 
+    case 'settings':
+      return (
+        <SettingsPage
+          onBack={() => setPage('home')}
+        />
+      );
+
     default:
       return (
         <HomePage
           onCreateRoom={() => setPage('create')}
           onJoinRoom={() => setPage('join')}
+          onSettings={() => setPage('settings')}
         />
       );
   }

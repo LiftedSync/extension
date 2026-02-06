@@ -2,7 +2,7 @@
   "name": "lifted-sync",
   "description": "Synchronized YouTube, Crunchyroll, Netflix & Prime Video watching",
   "private": true,
-  "version": "0.9.3",
+  "version": "0.9.4",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -17,6 +17,7 @@
   "dependencies": {
     "@radix-ui/react-avatar": "^1.1.11",
     "@radix-ui/react-label": "^2.1.8",
+    "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-slot": "^1.2.4",
     "@radix-ui/react-switch": "^1.2.6",
     "@radix-ui/react-toggle": "^1.1.10",
@@ -27,6 +28,7 @@
     "input-otp": "^1.4.2",
     "lucide-react": "^0.562.0",
     "react": "^19.2.3",
+    "react-colorful": "^5.6.1",
     "react-dom": "^19.2.3",
     "react-icons": "^5.5.0",
     "tailwind-merge": "^3.4.0",
