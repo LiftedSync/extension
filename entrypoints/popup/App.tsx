@@ -6,6 +6,7 @@ import { RoomPage } from './pages/RoomPage';
 import type { Platform, UserInfo, ConnectionStatus } from '@/lib/types';
 import type { PopupToBackgroundMessage, BackgroundToPopupMessage } from '@/lib/messages';
 import { detectPlatformFromUrl } from '@/lib/platforms';
+import { buildShareUrl } from '@/lib/utils';
 
 type Page = 'home' | 'create' | 'join' | 'room';
 
@@ -61,6 +62,16 @@ function App() {
 
         case 'roomCreated':
           setRoomId(message.roomId);
+          // Silently copy room url to share
+          browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
+            const tab = tabs[0];
+            if (tab?.url) {
+              const shareUrl = buildShareUrl(tab.url, message.roomId);
+              if (shareUrl) {
+                navigator.clipboard.writeText(shareUrl).catch(() => {});
+              }
+            }
+          });
           break;
 
         case 'userUpdate':

@@ -11,6 +11,7 @@ import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import type { Platform, UserInfo } from '@/lib/types';
 import type { PopupToBackgroundMessage, BackgroundToPopupMessage } from '@/lib/messages';
 import { isValidUrlForPlatform, getPlatformLabel } from '@/lib/platforms';
+import { buildShareUrl } from '@/lib/utils';
 
 interface RoomPageProps {
   roomId: string;
@@ -33,14 +34,7 @@ export function RoomPage({ roomId, platform, users, onLeaveRoom, activeTabId }: 
     browser.tabs.query({ active: true, currentWindow: true }).then((tabs) => {
       const tab = tabs[0];
       if (tab?.url) {
-        try {
-          const url = new URL(tab.url);
-          url.searchParams.delete('liftedSyncRoom');
-          url.searchParams.set('liftedSyncRoom', roomId);
-          setShareUrl(url.toString());
-        } catch {
-          // Invalid URL, skip
-        }
+        setShareUrl(buildShareUrl(tab.url, roomId));
       }
     });
   }, [roomId]);
